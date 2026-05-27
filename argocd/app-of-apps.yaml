@@ -1,0 +1,49 @@
+##############################################################
+# argocd/app-of-apps.yaml
+# The ROOT ArgoCD Application — manages all child apps
+# This is the only file you apply manually. Everything else
+# is managed by ArgoCD automatically from Git.
+#
+# Apply: kubectl apply -f argocd/app-of-apps.yaml -n argocd
+##############################################################
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-app
+  namespace: argocd
+  # Cascade delete — deleting root-app removes all child apps
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    owner: raghavendra-puri
+    managed-by: argocd
+    repo: gitops-helm-argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/ragavendrapuri/gitops-helm-argocd
+    targetRevision: HEAD
+    # Points to the directory containing all child app definitions
+    path: argocd/apps
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true       # Delete resources removed from Git
+      selfHeal: true    # Re-apply if someone manually edits K8s
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - ApplyOutOfSyncOnly=true  # Only sync what changed
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,60 @@
+##############################################################
+# argocd/apps/prod.yaml
+# Child Application — deploys cicd-demo to prod namespace
+# KEY DIFFERENCE: NO automated sync — prod requires manual approval
+##############################################################
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cicd-demo-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: prod
+    app: cicd-demo
+    managed-by: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: devops-critical
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: devops-critical
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: devops-critical
+    # Links shown in ArgoCD UI
+    link.argocd.argoproj.io/runbook: "https://github.com/ragavendrapuri/gitops-helm-argocd/blob/main/docs/runbooks/prod-deploy.md"
+spec:
+  project: prod-project
+
+  source:
+    repoURL: https://github.com/ragavendrapuri/gitops-helm-argocd
+    targetRevision: main
+    path: helm/app-chart
+
+    helm:
+      valueFiles:
+        - values.yaml
+        - envs/values-prod.yaml
+      parameters:
+        - name: environment
+          value: prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+
+  # ⚠️  NO automated syncPolicy for prod
+  # Deploy only via: argocd app sync cicd-demo-prod
+  # or via the ArgoCD UI with manual approval
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+      - PrunePropagationPolicy=foreground
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  revisionHistoryLimit: 20  # Keep more history for prod rollbacks

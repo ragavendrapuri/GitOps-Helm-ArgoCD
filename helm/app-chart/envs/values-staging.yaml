@@ -1,0 +1,26 @@
+##############################################################
+# helm/app-chart/envs/values-staging.yaml
+##############################################################
+replicaCount: 2
+environment: staging
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+
+ingress:
+  enabled: true
+  hosts:
+    - host: staging.cicd-demo.raghavpuri.dev
+      paths:
+        - path: /
+          pathType: Prefix

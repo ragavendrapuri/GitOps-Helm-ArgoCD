@@ -1,0 +1,14 @@
+---
+# ConfigMap — app configuration injected as env vars
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "app-chart.fullname" . }}-config
+  labels:
+    {{- include "app-chart.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"  # Create config before everything else
+data:
+  APP_ENVIRONMENT: {{ .Values.environment | quote }}
+  LOG_LEVEL: {{ if eq .Values.environment "prod" }}"INFO"{{ else }}"DEBUG"{{ end }}
+  MAX_WORKERS: {{ if eq .Values.environment "prod" }}"4"{{ else }}"2"{{ end }}

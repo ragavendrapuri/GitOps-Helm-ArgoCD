@@ -1,0 +1,38 @@
+##############################################################
+# helm/app-chart/envs/values-prod.yaml
+##############################################################
+replicaCount: 3
+environment: prod
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60   # Scale earlier in prod
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2   # Keep 2 pods alive even during node drain
+
+ingress:
+  enabled: true
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: cicd-demo.raghavpuri.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: cicd-demo-tls
+      hosts:
+        - cicd-demo.raghavpuri.dev

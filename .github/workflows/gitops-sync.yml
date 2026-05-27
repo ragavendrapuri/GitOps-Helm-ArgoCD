@@ -1,0 +1,121 @@
+##############################################################
+# .github/workflows/gitops-sync.yml
+# Updates the image tag in ArgoCD parameters via Git commit
+# Triggers ArgoCD auto-sync on push to main
+#
+# Flow: CI builds image → pushes to ECR → this workflow
+#       commits the new tag to Git → ArgoCD detects change
+#       → syncs new image to staging automatically
+##############################################################
+
+name: GitOps — Update image tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "New image tag to deploy"
+        required: true
+      environment:
+        description: "Target environment"
+        required: true
+        default: staging
+        type: choice
+        options: [dev, staging, prod]
+  # Also triggered by the CI pipeline from Project 2
+  workflow_call:
+    inputs:
+      image_tag:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+
+jobs:
+  update-image-tag:
+    name: Update image tag in Git
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITOPS_PAT }}  # PAT with repo write access
+
+      - name: Configure git
+        run: |
+          git config user.email "ci@github.com"
+          git config user.name  "GitHub Actions"
+
+      - name: Update image tag in ArgoCD app
+        run: |
+          ENV="${{ inputs.environment }}"
+          TAG="${{ inputs.image_tag }}"
+
+          # Update the image tag parameter in the ArgoCD app definition
+          # Uses yq to safely update the YAML without reformatting
+          yq eval -i "
+            .spec.source.helm.parameters[] |=
+            select(.name == \"image.tag\").value = \"${TAG}\"
+          " argocd/apps/${ENV}.yaml
+
+          echo "Updated ${ENV} to image tag: ${TAG}"
+          cat argocd/apps/${ENV}.yaml
+
+      - name: Commit and push
+        run: |
+          git add argocd/apps/${{ inputs.environment }}.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore(gitops): deploy ${{ inputs.image_tag }} to ${{ inputs.environment }}
+
+            Triggered by: ${{ github.actor }}
+            Workflow:     ${{ github.workflow }}
+            Run:          ${{ github.run_id }}"
+          git push origin main
+
+  # Trigger prod sync manually after staging succeeds
+  promote-to-prod:
+    name: Promote to production
+    runs-on: ubuntu-latest
+    needs: update-image-tag
+    if: inputs.environment == 'staging'
+    environment: production  # GitHub environment with required reviewers
+
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --username admin \
+            --password ${{ secrets.ARGOCD_PASSWORD }} \
+            --insecure
+
+      - name: Wait for staging to be healthy
+        run: |
+          argocd app wait cicd-demo-staging \
+            --health \
+            --timeout 300
+          echo "Staging is healthy — ready for prod promotion"
+
+      - name: Sync production (manual gate satisfied by GitHub environment approval)
+        run: |
+          argocd app set cicd-demo-prod \
+            --helm-set image.tag=${{ inputs.image_tag }}
+          argocd app sync cicd-demo-prod \
+            --timeout 300 \
+            --prune \
+            --retry-limit 3
+          argocd app wait cicd-demo-prod \
+            --health \
+            --timeout 300
+
+      - name: Verify production health
+        run: |
+          argocd app get cicd-demo-prod
+          echo "Production deploy complete!"

@@ -1,0 +1,56 @@
+##############################################################
+# argocd/apps/staging.yaml
+# Child Application — deploys cicd-demo to staging namespace
+##############################################################
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cicd-demo-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: staging
+    app: cicd-demo
+    managed-by: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: devops-alerts
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: devops-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: devops-alerts
+spec:
+  project: staging-project
+
+  source:
+    repoURL: https://github.com/ragavendrapuri/gitops-helm-argocd
+    targetRevision: main   # staging tracks main branch
+    path: helm/app-chart
+
+    helm:
+      valueFiles:
+        - values.yaml
+        - envs/values-staging.yaml
+      parameters:
+        - name: environment
+          value: staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: staging
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  revisionHistoryLimit: 10

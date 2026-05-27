@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+tfplan*
+secrets.yaml
+*.env
+.DS_Store
+charts/
+*.tgz

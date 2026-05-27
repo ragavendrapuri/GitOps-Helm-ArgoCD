@@ -1,0 +1,84 @@
+##############################################################
+# argocd/rbac/argocd-notifications-cm.yaml
+# Configures Slack notifications for sync events
+##############################################################
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+data:
+  service.slack: |
+    token: $slack-token
+
+  # ── Notification triggers ────────────────────────────────────
+  trigger.on-sync-succeeded: |
+    - when: app.status.operationState.phase in ['Succeeded']
+      send: [app-sync-succeeded]
+
+  trigger.on-sync-failed: |
+    - when: app.status.operationState.phase in ['Error', 'Failed']
+      send: [app-sync-failed]
+
+  trigger.on-health-degraded: |
+    - when: app.status.health.status == 'Degraded'
+      send: [app-health-degraded]
+
+  trigger.on-deployed: |
+    - when: app.status.operationState.phase in ['Succeeded'] && app.status.health.status == 'Healthy'
+      oncePer: app.status.sync.revision
+      send: [app-deployed]
+
+  # ── Notification templates ───────────────────────────────────
+  template.app-sync-succeeded: |
+    slack:
+      attachments: |
+        [{
+          "title": "✅ {{ .app.metadata.name }} — sync succeeded",
+          "color": "#18be52",
+          "fields": [
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Revision",    "value": "{{ .app.status.sync.revision | truncate 7 }}", "short": true},
+            {"title": "Duration",    "value": "{{ .app.status.operationState.duration }}", "short": true}
+          ],
+          "actions": [{"type":"button","text":"Open in ArgoCD","url":"{{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}"}]
+        }]
+
+  template.app-sync-failed: |
+    slack:
+      attachments: |
+        [{
+          "title": "❌ {{ .app.metadata.name }} — sync FAILED",
+          "color": "#E96D76",
+          "fields": [
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Error",       "value": "{{ .app.status.operationState.message }}", "short": false}
+          ],
+          "actions": [{"type":"button","text":"View logs","url":"{{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}"}]
+        }]
+
+  template.app-health-degraded: |
+    slack:
+      attachments: |
+        [{
+          "title": "⚠️ {{ .app.metadata.name }} — health degraded",
+          "color": "#f4c030",
+          "fields": [
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Health",      "value": "{{ .app.status.health.status }}", "short": true},
+            {"title": "Message",     "value": "{{ .app.status.health.message }}", "short": false}
+          ]
+        }]
+
+  template.app-deployed: |
+    slack:
+      attachments: |
+        [{
+          "title": "🚀 {{ .app.metadata.name }} deployed successfully",
+          "color": "#18be52",
+          "fields": [
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Image tag",   "value": "{{ (call .repo.GetAppDetails).helm.parameters | filter \"name\" \"image.tag\" | first | .value }}", "short": true}
+          ]
+        }]

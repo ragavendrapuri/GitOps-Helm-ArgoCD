@@ -1,0 +1,116 @@
+##############################################################
+# helm/app-chart/values.yaml
+# Base values — overridden by envs/values-{env}.yaml
+##############################################################
+
+replicaCount: 2
+fullnameOverride: "cicd-demo"
+
+image:
+  repository: ""      # Set by ArgoCD parameter at sync time
+  tag: latest
+  pullPolicy: Always  # Always pull — ensures latest tag works correctly
+
+nameOverride: ""
+
+environment: dev
+
+service:
+  type: ClusterIP   # Use Ingress in prod, not direct LoadBalancer
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: app.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Zero-downtime rolling update
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# Always keep at least 1 pod alive
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Liveness probe — restarts pod if unhealthy
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+  timeoutSeconds: 5
+
+# Readiness probe — removes from LB if not ready
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+  timeoutSeconds: 3
+
+# Non-root security — hardens pod against container escapes
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 2000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Spread pods across nodes — avoids single-node SPOF
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [cicd-demo]
+          topologyKey: kubernetes.io/hostname
+
+nodeSelector: {}
+tolerations: []
+
+# ArgoCD sync wave — controls order of resource creation
+# Negative = before app resources, Positive = after
+syncWave: 0

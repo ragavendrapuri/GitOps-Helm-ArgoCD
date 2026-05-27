@@ -1,0 +1,155 @@
+##############################################################
+# argocd/projects/projects.yaml
+# ArgoCD Projects — define RBAC boundaries per environment
+# Projects restrict which repos, clusters, and namespaces
+# each team/environment can access
+##############################################################
+
+---
+# DEV PROJECT — wide open, developers can sync freely
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dev-project
+  namespace: argocd
+  labels:
+    environment: dev
+spec:
+  description: "Development environment — low risk, auto-sync enabled"
+
+  # Which repos this project can deploy from
+  sourceRepos:
+    - "https://github.com/ragavendrapuri/gitops-helm-argocd"
+    - "https://charts.helm.sh/stable"
+    - "https://prometheus-community.github.io/helm-charts"
+
+  # Which clusters and namespaces this project can deploy to
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: dev
+
+  # Which K8s resource types are allowed
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # RBAC — developers can do everything in dev
+  roles:
+    - name: developer
+      description: Full access to dev project
+      policies:
+        - p, proj:dev-project:developer, applications, *, dev-project/*, allow
+      groups:
+        - developers
+
+---
+# STAGING PROJECT — read access for devs, sync for devops
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: staging-project
+  namespace: argocd
+  labels:
+    environment: staging
+spec:
+  description: "Staging environment — devops team can sync, devs read-only"
+
+  sourceRepos:
+    - "https://github.com/ragavendrapuri/gitops-helm-argocd"
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: staging
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  roles:
+    - name: devops
+      description: Full access to staging
+      policies:
+        - p, proj:staging-project:devops, applications, *, staging-project/*, allow
+      groups:
+        - devops-team
+    - name: developer
+      description: Read-only access to staging
+      policies:
+        - p, proj:staging-project:developer, applications, get, staging-project/*, allow
+      groups:
+        - developers
+
+---
+# PROD PROJECT — most restricted, only devops-lead can sync
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod-project
+  namespace: argocd
+  labels:
+    environment: prod
+spec:
+  description: "Production — manual sync only, devops-lead approval required"
+
+  sourceRepos:
+    - "https://github.com/ragavendrapuri/gitops-helm-argocd"
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: prod
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: ServiceAccount
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: networking.k8s.io
+      kind: Ingress
+
+  # Orphaned resource monitoring — alert if something exists in prod
+  # that isn't in Git (drift detection)
+  orphanedResources:
+    warn: true
+    ignore:
+      - group: ""
+        kind: ConfigMap
+        name: kube-root-ca.crt
+
+  roles:
+    - name: devops-lead
+      description: Can sync to production
+      policies:
+        - p, proj:prod-project:devops-lead, applications, sync,   prod-project/*, allow
+        - p, proj:prod-project:devops-lead, applications, get,    prod-project/*, allow
+        - p, proj:prod-project:devops-lead, applications, action, prod-project/*, allow
+      groups:
+        - devops-lead
+    - name: devops
+      description: Read-only view of production
+      policies:
+        - p, proj:prod-project:devops, applications, get, prod-project/*, allow
+      groups:
+        - devops-team
+    - name: developer
+      description: No production access
+      policies: []

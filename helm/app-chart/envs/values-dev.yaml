@@ -1,0 +1,22 @@
+##############################################################
+# helm/app-chart/envs/values-dev.yaml
+##############################################################
+replicaCount: 1
+environment: dev
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false    # No HPA in dev — save resources
+
+podDisruptionBudget:
+  enabled: false    # No PDB in dev
+
+service:
+  type: LoadBalancer   # Direct access in dev for easy testing

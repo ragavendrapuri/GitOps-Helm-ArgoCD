@@ -1,0 +1,39 @@
+##############################################################
+# argocd/rbac/argocd-rbac-cm.yaml
+# ArgoCD RBAC ConfigMap — cluster-wide access control
+# Apply: kubectl apply -f argocd/rbac/ -n argocd
+##############################################################
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  policy.default: role:readonly  # Everyone gets read-only by default
+
+  policy.csv: |
+    # ── Built-in roles ──────────────────────────────────────────
+    # role:readonly  — can view everything, sync nothing
+    # role:admin     — full cluster access
+
+    # ── Raghavendra — full admin ─────────────────────────────────
+    g, puriraghavendra14@gmail.com, role:admin
+
+    # ── DevOps team — can sync dev and staging ───────────────────
+    g, devops-team, proj:dev-project:devops
+    g, devops-team, proj:staging-project:devops
+
+    # ── DevOps lead — can sync prod ──────────────────────────────
+    g, devops-lead, proj:prod-project:devops-lead
+    g, devops-lead, proj:staging-project:devops
+
+    # ── Developers — read staging, full dev ──────────────────────
+    g, developers, proj:dev-project:developer
+    g, developers, proj:staging-project:developer
+
+  # Use GitHub OAuth for SSO (configure clientID in argocd-cm)
+  scopes: "[groups, email]"

@@ -1,0 +1,63 @@
+##############################################################
+# argocd/apps/dev.yaml
+# Child Application — deploys cicd-demo to dev namespace
+# Managed by root-app (App-of-Apps pattern)
+##############################################################
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cicd-demo-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: dev
+    app: cicd-demo
+    managed-by: argocd
+  annotations:
+    # Link back to GitHub for context in the ArgoCD UI
+    argocd.argoproj.io/manifest-generate-paths: "."
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: devops-alerts
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: devops-alerts
+spec:
+  # Use the restricted dev project (see argocd/projects/dev.yaml)
+  project: dev-project
+
+  source:
+    repoURL: https://github.com/ragavendrapuri/gitops-helm-argocd
+    targetRevision: develop   # dev tracks the develop branch
+    path: helm/app-chart
+
+    helm:
+      # Base values + dev-specific overrides
+      valueFiles:
+        - values.yaml
+        - envs/values-dev.yaml
+      # Runtime overrides (image tag set by CI pipeline)
+      parameters:
+        - name: image.tag
+          value: latest
+        - name: environment
+          value: dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+  # Health checks — ArgoCD won't mark as Healthy until these pass
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas   # Ignore HPA-managed replica count
+
+  revisionHistoryLimit: 5
