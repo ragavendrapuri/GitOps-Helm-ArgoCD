@@ -1,7 +1,6 @@
 ##############################################################
 # terraform/argocd.tf
 # Installs ArgoCD on EKS via Helm + configures the repo
-#also verify architecture to work effiviently and 0% downtime
 ##############################################################
 
 terraform {
