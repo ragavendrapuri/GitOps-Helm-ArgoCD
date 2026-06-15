@@ -1,0 +1,67 @@
+name: GitOps Deployment Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker Image Tag to deploy (e.g., main-abc1234-42)'
+        required: true
+        type: string
+      environment:
+        description: 'Target Environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    
+    # Leverages GitHub Environments for approvals (especially critical for production)
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install yq
+        name: Ensure yq is available for YAML manipulation
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update Helm Value Image Tag
+        run: |
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          FILE_PATH="helm/app-chart/envs/values-${TARGET_ENV}.yaml"
+          
+          echo "Updating $FILE_PATH with image tag: $IMAGE_TAG"
+          
+          # Modifies the image.tag value inside your specific environment values file
+          if [ -f "$FILE_PATH" ]; then
+            yq -i ".image.tag = \"${IMAGE_TAG}\"" "$FILE_PATH"
+          else
+            echo "Error: Target values file $FILE_PATH not found!"
+            exit 1
+          fi
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          
+          git add helm/app-chart/envs/values-${TARGET_ENV}.yaml
+          git commit -m "chore(gitops): deploy $IMAGE_TAG to $TARGET_ENV [skip ci]"
+          git push origin main
